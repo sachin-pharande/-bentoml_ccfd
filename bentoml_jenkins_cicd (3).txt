@@ -1,0 +1,451 @@
+https://github.com/sachin-pharande/-bentoml_ccfd
+
+
+# project bentoml jenkins CICD 
+
+
+Inferastructure: AWS EC2 Instance 
+Platform: kubernetes
+Language: Python
+Data science Tool: jupyter
+Machine learning Package: xgboost,scikit-learn
+Deployment Service: Bentoml
+Deploying Tool:Yatai
+Repository: Docker hub
+client Database: Mongodb
+Database: AWS RDS Postgres
+Kubernetes monitoring and orcastration : prometheus
+Kubernetes visualization: grafana
+
+Infrastructure: AWS EC2 instance 
+                 1.)EC2 instance (Master)
+                        AMI: ubuntu 20.04
+                        security group (default + all trafic)
+			VOLUME: 30 gb
+                 
+		 2.)EC2 instance (Worker)
+                        AMI: ubuntu 20.04
+                        security group (default + all trafic)
+			VOLUME: 30 gb
+                                        			
+
+(assign  all trafic (ipv4 and ipv6 both) in security Group)
+(((((((((((((((((((((((((((((((kubernetes Installation)))))))))))))))))))))))))))))))))
+=====================================================================================
+RUN FOR MASTER
+--------------
+sudo hostname master
+bash
+sudo su
+apt update && apt -y upgrade
+
+{
+sudo apt update && sudo apt upgrade -y
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt update -y
+sudo apt -y install vim git curl wget kubelet=1.26.0-00 kubeadm=1.26.0-00 kubectl=1.26.0-00
+sudo apt-mark hold kubelet kubeadm kubectl
+sudo modprobe overlay
+sudo modprobe br_netfilter
+sudo tee /etc/sysctl.d/kubernetes.conf<<EOF
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+EOF
+sysctl --system
+cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
+overlay
+br_netfilter
+EOF
+sudo modprobe overlay
+sudo modprobe br_netfilter
+sudo modprobe overlay
+sudo modprobe br_netfilter
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+sudo sysctl --system
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt update -y
+sudo apt install -y containerd.io
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+sudo kubeadm config images pull --image-repository=registry.k8s.io --cri-socket unix:///run/containerd/containerd.sock --kubernetes-version v1.26.0
+kubeadm init --image-repository=registry.k8s.io
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config 
+kubectl get --raw='/readyz?verbose'
+kubectl cluster-info 
+export KUBECONFIG=/etc/kubernetes/admin.conf
+kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml 
+kubeadm token create --print-join-command
+kubectl get po -A
+}
+
+============================================================================
+================================================================================================
+//////////////////////////////////////////////////////////////////////////////////////////////////////===========================
+
+
+
+===================== run on worker node====================
+
+sudo hostname worker
+bash
+sudo su
+apt update && apt -y upgrade
+
+
+{
+sudo apt update && sudo apt upgrade -y
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo "deb https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt update -y
+sudo apt -y install vim git curl wget kubelet=1.26.0-00 kubeadm=1.26.0-00 kubectl=1.26.0-00
+sudo apt-mark hold kubelet kubeadm kubectl
+sudo modprobe overlay
+sudo modprobe br_netfilter
+sudo tee /etc/sysctl.d/kubernetes.conf<<EOF
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+EOF
+sysctl --system
+cat <<EOF | sudo tee /etc/modules-load.d/containerd.conf
+overlay
+br_netfilter
+EOF
+sudo modprobe overlay
+sudo modprobe br_netfilter
+sudo modprobe overlay
+sudo modprobe br_netfilter
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+sudo sysctl --system
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt update -y
+sudo apt install -y containerd.io
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+sudo systemctl restart containerd
+sudo systemctl enable containerd
+sudo kubeadm config images pull --image-repository=registry.k8s.io --cri-socket unix:///run/containerd/containerd.sock --kubernetes-version v1.26.0
+}
+==========================================================================================================================
+(assign  all trafic in security Group)
+
+kubeadm token create --print-join-command   ---> copy token generated on master with this command and paste it on worker node.
+
+# on master
+kubectl get no -A
+kubectl get po -A
+
+
+join node
+
+kubectl get no -A
+((((((((((((((((((((((((((((((((((((kubernetes installation done))))))))))))))))))))))))))))))))))))))
+
+
+
+#install docker-ce
+{ 
+sudo apt install apt-transport-https ca-certificates curl software-properties-common;
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg;
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null;
+sudo apt update;
+sudo apt-cache policy docker-ce;
+sudo apt install docker-ce -y;
+sudo systemctl status docker;
+}
+sudo chmod 777 /var/run/docker.sock
+
+#Install java
+sudo apt-get install openjdk-11-jre -y
+sudo apt-get update
+
+# install Jenkins
+sudo apt-get update
+curl -fsSL https://pkg.jenkins.io/debian/jenkins.io-2023.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+sudo apt update
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+sudo apt update
+sudo apt-get install jenkins -y
+sudo systemctl daemon-reload
+sudo systemctl start jenkins
+sudo systemctl status jenkins
+
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword ---> f172fc42d6e84f069bd7ec7617d05e5b
+sudo vi /etc/sudoers.d/filename
+# paste below connamd to above file.
+jenkins ALL=(ALL) NOPASSWD: ALL
+
+#open browser
+<public ip>:8080
+
+#manage jenkins> manage plugin>available plugin> search Docker> select all dockers(5)>
+Docker plugin Version1.3.0
+Docker API Plugin Version3.2.13-68.va_875df25a_b_45
+Docker Commons Plugin Version419.v8e3cd84ef49c
+Docker Pipeline Version563.vd5d2e5c4007f
+docker-build-step Version2.9
+#click on install without restart
+
+#install progress> click on restart jenkins>
+
+#manage jenkins> manage plugins> advance settings> deploy plugin> upload "kubernetes-cd.hpi"  file> deploy
+#install progress> click on restart jenkins>
+
+#manage jenkins> manage plugin>available plugin> search kubernetes> selet all kubernetes(8)>
+Github App Kubernetes Credentials Version0.0.1
+Kubernetes :: Pipeline :: DevOps Steps Version1.6 
+Kubernetes CLI Plugin Version1.12.0
+Kubernetes Client API Plugin Version6.4.1-215.v2ed17097a_8e9 
+Kubernetes Continuous Deploy Plugin Version1.0.0
+Kubernetes Credentials Plugin Version0.10.0
+Kubernetes Credentials Provider Version1.211.vc236a_f5a_2f3c
+Kubernetes plugin Version3909.v1f2c633e8590
+#click on install without restart
+
+#install progress> click on restart jenkins>
+
+########install kubernetes cluster on master and worker instance and get
+
+#create credencials for Github
+
+#Dashboard>Manage Jenkins>Credentials>System>Global credentials (unrestricted)
+#enter git ussername  ---> sachin-pharande
+#enter git password   ----> 
+#ID   enter  Git-Hub-Credentials
+#Description Git-Hub-Credentials
+#create
+
+#create credencials for Docker hub
+Dashboard>Manage Jenkins>Credentials>System>Global credentials (unrestricted)
+#kind> secret text
+
+#enter secret dockerhub password>   ---> 
+#enter ID of your dockerhub>  sachinpharande
+#Description> Docker
+#create
+
+
+#create credencials for kubernetes
+Dashboard>Manage Jenkins>Credentials>System>Global credentials (unrestricted)
+#kind> kubernetes Configuration(kubeconfig)
+#ID> kuberneteskey
+#Description> kubernetes
+#kubeconfig> check Enter directly
+	content> #copy the content of master and paste it here from (create kubernetes cluster if not exist)
+                 cat /root/.kube/config
+#create
+
+sudo systemctl restart jenkins
+sudo systemctl status jenkins
+
+create a new project> pipeline --> ok
+#general>github project> project url> https://github.com/sachin-pharande/-bentoml_ccfd.git  -->  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
+
+https://github.com/RupaliKhare/bentoml_ccfd.git
+
+git config --global --add safe.directory /home/ubuntu
+
+#Build_trigger> GitHub hook trigger for GITScm polling?
+
+#project>config>pipeline>pipelinesyntax>steps/samplesteps>KubernetesDeploy: Deploty to Kubernetes
+#kubeconfig> kuberneteskey
+#Generate pipeline script   --->  kubernetesDeploy configs: '', kubeConfig: [path: ''], kubeconfigId: ''
+
+copy the above code and paste 
+# Jenkins file in github 
+
+node {
+         stage("Git Clone"){
+
+         git credentialsId: 'Git-Hub-Credentials', url: "https://github.com/sachin-pharande/-bentoml_ccfd.git"
+                                                      
+         
+         stage("Docker build"){
+             sh 'docker version'
+             sh 'pip install -r requirements.txt'
+             sh 'python3 train.py'
+             sh 'bentoml build .'
+             sh 'bentoml containerize xgb_classifier:latest -t sachinpharande/xgb_classifier:latest'
+                                                               
+         }
+         stage("Docker Login"){
+                                                     
+             withCredentials([string(credentialsId: 'sachinpharande', variable: 'PASSWORD')]) {
+        	    sh "docker login -u sachinpharande -p ${PASSWORD}"
+         }                        
+         }
+         stage("Push image to docker hub"){
+             sh 'docker push sachinpharande/xgb_classifier:latest'
+         }
+
+         stage("Kubernetes deployment"){
+             kubernetesDeploy (configs: 'deploymentservice.yaml', kubeconfigId: 'kuberneteskey')
+           }
+
+        }
+    }
+
+#commit
+
+
+# activate pip run on root
+curl -O https://bootstrap.pypa.io/get-pip.py
+python3 get-pip.py
+export PATH=LOCAL_PATH:$PATH
+source ~/.bashrc
+pip install pip
+sudo apt install python3-pip -y
+
+#install python packages requirements for project
+git clone https://github.com/sachin-pharande/-bentoml_ccfd.git
+pip install -r -bentoml_ccfd/requirements.txt 
+
+
+#Add webhook
+#navigate to git project repository
+settings>webhook>Add webhook>
+payload url> http://<master_instance-ip>:8080/github-webhook/
+
+content type> aplication/json
+
+create webhook/update webhook
+
+#Jenkins Dashboard --> Job-1 (Name) --> Cofiguration --> Pipeline --> Pipeline script from SCM --> 
+--> SCM --> Git --> Repo URL --> https://github.com/sachin-pharande/-bentoml_ccfd.git
+--> Credentials --> Add Git-Hub Credentials (username & Password) 
+--> Brances to build --> Branch specifier --> */main (whichever branch is there on Git-Hub)
+--> Script Path --> Jenkinsfile
+
+#go to dash board in <mlproject> 
+Build now
+#if any error, then check logs
+
+kubectl get po -A
+
+kubectl get svc
+#copy port of loadbalancer-port
+
+#open the browser
+<instance-ip>:loadbalancer-port
+
+
+
+######################################################################
+
+########kubernetes dashboard installation############
+
+cat << EOF > service-account-user.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
+
+
+kubectl apply -f service-account-user.yaml
+
+cat << EOF > clusetr-role-binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
+
+
+
+kubectl apply -f clusetr-role-binding.yaml
+
+kubectl -n kubernetes-dashboard create token admin-user
+
+eyJhbGciOiJSUzI1NiIsImtpZCI6Ii1UVlVwREpDd3hoVVl5V0ExSmNxUzJMNXFaQ3oxal9hSERQTUJWWDRORU0ifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiXSwiZXhwIjoxNjc4MzY4MTU3LCJpYXQiOjE2NzgzNjQ1NTcsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJrdWJlcm5ldGVzLWRhc2hib2FyZCIsInNlcnZpY2VhY2NvdW50Ijp7Im5hbWUiOiJhZG1pbi11c2VyIiwidWlkIjoiNTE2ZWE5NzktMzE4Ny00MjFhLTljZDYtZmNkODE4NDU2NjA0In19LCJuYmYiOjE2NzgzNjQ1NTcsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDprdWJlcm5ldGVzLWRhc2hib2FyZDphZG1pbi11c2VyIn0.btaS0qYnq7tMFKe2q67b-rbLmlzz5wATOkMFoevvRWo_TWArNoK9rbQ2-UK2JVF0ht07DAmHkTg_5NdM3IkiwqidG_c7ohAFT7BjHPrT-teBu3wAUevcuU3ayd-uMuIvJwmiEd4qcfG3tZh0OFC-3mKfhBVWjf9gwb7NcXTDgGpgh1mHLdEEUn3NOxAR8OdXJqpkUajiIMOohpqeeVySEhWXfIc_6AzbPcq4wXv_-XRIJVSDtnpUhzFyqaZ5GwQBjQ2rh_dHSvaxmHEpftybg1Bin6ROW-dWXISUAdFRNB2n0Kbx2u_WikvnGPQuLxyJiB6w1cL5P_0UN4CcfX5NZw
+
+
+#open cmd in windows system
+ssh -L 8001:localhost:8001 ubuntu@18.212.20.42 -i dev-key-pair-11.pem 
+
+sudo su
+root@master:/home/ubuntu# kkubectl create serviceaccount dashboard -n default
+
+
+
+kubectl get secret $(kubectl get serviceaccount dashboard -o jsonpath="{.secrets[0].name}") -o jsonpath="{.data.token}" | base64 --decode
+
+kubectl proxy
+#paste token here
+
+
+#open dashboard link
+http://127.0.0.1:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+
+
+===========================
+
+
+
+
+
+
+
+##############observability############
+#run prometheus on via docker
+
+
+vi prometheus.yml
+
+# prometheus.yml
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 30s
+  # scrape_timeout is set to the global default (10s).
+
+scrape_configs:
+- job_name: prometheus
+
+  honor_labels: true
+  static_configs:
+  - targets:
+    - localhost:3000  # metrics from SentimentClassifier service
+    - localhost:5000  # metrics from IrisClassifier service
+
+
+kubectl apply -f prometheus.yml
+
+docker run --network=host -v /home/ubuntu/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+
+# open port <instance-ip>:9090
+# open port <instance-ip>:9090/status
+# open port <instance-ip>:9090/targets
+
+*******************GRAFANA***********************
+
+docker run -p 3010:3000 --network=host  -e "GF_SERVER_HTTP_PORT=3010" grafana/grafana
+
+
+
+
