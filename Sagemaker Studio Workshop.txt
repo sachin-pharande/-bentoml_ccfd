@@ -1,0 +1,438 @@
+Difference Between .bashrc, .bash-profile, and .profile
+
+if [ -f ~/.bashrc ];
+then 
+    .  ~/.bashrc; 
+fi 
+PATH=$PATH:$HOME/bin export PATH
+
+An error occurred (AccessDeniedException) when calling the GetAuthorizationToken operation: User is not authorized to perform: sts:GetServiceBearerToken on resource: arn:aws:iam:root
+
+------------------------------------------------------------------
+Fix YAML indentation
+https://chat.openai.com/share/f6d61731-a512-44f7-a5d3-ab323469b1a9
+
+-------------------------------------------------------------------
+######### Lab 1: Best Practice as Code #########
+
+1) Cloud9 Setup
+AWS Cloud9 --> Environments --> Create environment -->
+
+Name : secure-sm-studio-workshop
+Description : Cloud9 IDE for secure Sagemaker studio workshop
+ec2 inst : t2 micro
+platform : Amazon Linux 2
+Timeout : 30 min
+Network setting : SSM ( Amazon System Manager)
+
+--> create --> open (env created) --> (Opens a new tab for AWS Cloud 9 environment)
+--> Close welcome page --> (+) to open new terminal --> Close below terminal -->
+-------------------------------------------------------------------------------
+## Install awscli v2
+
+	curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+	unzip awscliv2.zip
+	sudo ./aws/install
+	sudo yum -y install jq bash-completion
+	aws sts get-caller-identity
+## output
+{
+    "Account": "123456789012",
+    "UserId": "AKIAI44QH8DHBEXAMPLE",
+    "Arn": "arn:aws:iam::123456789012:user/Alice"
+}
+---------------------------------------------------------------------------
+
+## Set up AWS_DEFAULT_REGION and AWS_ACCOUNT_ID environment variables
+
+	echo "export AWS_DEFAULT_REGION=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|jq -r .region`" >>  ~/.bash_profile
+	echo "export AWS_ACCOUNT_ID=`curl -s http://169.254.169.254/latest/dynamic/instance-identity/document|jq -r .accountId`" >>  ~/.bash_profile
+	.  ~/.bash_profile
+
+--------------------------------------------------------------------
+## Increase disk space for the root volume of EC2 instance that Cloud9 runs on
+copy and paste below code in bracket ---exclude the brackets
+[
+
+pip3 install --user --upgrade boto3
+export instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+python3 -c "import boto3
+import os
+from botocore.exceptions import ClientError 
+region = os.getenv('AWS_DEFAULT_REGION')
+if (region == 'us-east-2'):
+    ec2 = boto3.client('ec2', region_name=region, endpoint_url='https://api.ec2.us-east-2.aws')
+else:
+  ec2 = boto3.client('ec2')
+volume_info = ec2.describe_volumes(
+    Filters=[
+        {
+            'Name': 'attachment.instance-id',
+            'Values': [
+                os.getenv('instance_id')
+            ]
+        }
+    ]
+)
+volume_id = volume_info['Volumes'][0]['VolumeId']
+try:
+    resize = ec2.modify_volume(    
+            VolumeId=volume_id,    
+            Size=30
+    )
+    print(resize)
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidParameterValue':
+        print('ERROR MESSAGE: {}'.format(e))"
+if [ $? -eq 0 ]; then
+    sudo reboot
+fi
+
+]
+
+---------------------------------------------------------------
+## Clone the Workshop Repository
+	cd ~/environment
+	git clone https://github.com/aws-samples/amazon-sagemaker-studio-secure-data-science-workshop.git
+----------------------------------------------------------------
+
+## Building Secure Environments
+
+## On Cloud9 bash shell
+	cd ~/environment/amazon-sagemaker-studio-secure-data-science-workshop/
+	echo $AWS_DEFAULT_REGION   -->
+	echo $AWS_ACCOUNT_ID       --> 
+
+## double-clicking on package_cloudformation.sh to open -->  QUICKSTART_MODE -->
+--> change from true to false --> save
+
+	./package_cloudformation.sh
+
+## When the script is done, it will print a command to run create-stack using ds_administration.yaml template
+
+   aws cloudformation create-stack \
+   --template-url https://s3.${REGION}.amazonaws.com/${CFN_BUCKET_NAME}/${PROJECT_NAME}/ds_administration.yaml \ 
+   --region ${REGION} 
+   --stack-name secure-ds-shared-service \
+   --capabilities CAPABILITY_NAMED_IAM \
+   --parameters ParameterKey=QuickstartMode,ParameterValue=false
+------------------------------------
+
+## On CodeArtifact console --> Repositories --> 2 repo: 
+			Check  1) ds-public-upstream-repo --> Info, Details --> External connection --> public:pypi
+			       2) ds-shared-repo --> No Info
+
+
+-----------------------------------------
+## in the Cloud9 bash terminal tab
+	# cd ~/environment/amazon-sagemaker-studio-secure-data-science-workshop/
+	./code_artifact_login.sh --->
+	./install_code_artifact_pip_packages.sh		---> (time consuming --> check .sh file)
+	
+## Verify that Python packages were installed --> Code Artifact console --> Repositories --> ds-shared-repo --> Packages --> Notice Python Packages
+
+--------------------------------------------------------------
+## in the Cloud9 bash terminal tab
+	# cd ~/environment/amazon-sagemaker-studio-secure-data-science-workshop/
+	cd customimage/jupyter-docker-stacks-tensorflow
+	./build-publish-sm-docker-image.sh	---> (much time consuming --> check .sh file)
+
+## Visit ECR console -->  Amazon ECR --> Repositories --> ds-shared-container-images --> ds-custom-tensorflow241 -- in the Private tab 
+---------------------------------------------------------------------------
+ ## Create AWS Service Catalog PortfolioHeader anchor link
+ On AWS Service Catalog  --> Portfolios --> Create portfolio --> Portfolio name -->  Data Science Administrator -->
+										Description -->  This portfolio is a collection of products designed to support managing data science teams
+-->  Owner : Cloud Operations Team --> Create --> (Created) --> 
+--> your new portfolio --> view the portfolio's details --> Access --> Grant Access --> Roles -->
+ --> search : DataScienceAdmin --> click DataScienceAdministrator (DSSharedServices-DataScienceAdministrator -->  Grant access
+
+------------------------------------------------------------------------
+ ## add 3 products to this portfolio
+ ## Add SageMaker Studio Product
+	Service Catalog --> Portfolios --> Data Science AdministratorProducts --> products --> Create product
+--> Product name : SageMaker Studio Product
+--->Description : Onboards SageMaker Studio Domain to the AWS Account 
+--> Owner : Cloud Operations Team -->  Use a CloudFormation template --> Specify a URL -->
+--> CloudFormation template URL : 
+	( s3 --> Buckets --> secure-data-science-cloudformation-{RANDOM_NUMBER}-{REGION} -->
+	--> objects --> quickstart --> click on hyperlink for template ds_env_sagemaker_studio.yaml --> 
+ 	--> Click on copy icon under Object URL --> paste in CloudFormation template URL )
+--> Version name : v1 --> Review --> Create product --> (gets created) -->  
+--> Products --> radio button next to the new product -->  Actions --> Add product to portfolio --> 
+--> ## radio button for your product portfolio --> Add Product to Portfolio --> 
+--> Portfolios on the left --> Data Science Administrator Portfolio --> Constraints --> Create constraint --> 
+--> Product --> select your product --> Constraint type : Launch --> 
+--> Launch Constraint --> Select IAM role -->
+--> IAM role  --> {Shared Service Stack Name}-ServiceCatalogLaunchRole (default is DSSharedServices-ServiceCatalogLaunchRole) -->
+--> Create
+---------------------------------------------------
+ ## Add Data Science Team Environment Product
+	Service Catalog --> Portfolios --> Data Science Administrator --> products --> Create product -->
+--> Product name : Data Science Team Environment
+--->Description : S3 buckets for hosting data and model, KMS Key and AWS Code Commit git repository to support data science teams 
+--> Owner : Data Science Administration Office -->  Use a CloudFormation template --> Specify a URL -->
+--> CloudFormation template URL : 
+	( s3 --> Buckets --> secure-data-science-cloudformation-{RANDOM_NUMBER}-{REGION} -->
+	--> objects --> ds_environment.yaml --> # quickstart --> click on hyperlink for template ds_environment.yaml --> 
+ 	--> Click on copy icon under Object URL --> paste in CloudFormation template URL )
+--> Version name : v1 --> Review --> Create product --> (gets created) -->  
+--> Products --> radio button next to the new product -->  Actions --> Add product to portfolio --> 
+--> ## radio button for your product portfolio --> Add Product to Portfolio --> 
+--> Portfolios on the left --> Data Science Administrator Portfolio --> Constraints --> Create constraint --> 
+--> Product --> select your product --> Constraint type : Launch --> 
+--> Launch Constraint --> Select IAM role -->
+--> IAM role  --> {Shared Service Stack Name}-ServiceCatalogLaunchRole (default is DSSharedServices-ServiceCatalogLaunchRole) -->
+--> Create
+-----------------------------------------------------
+  ## Add Data Science Studio User Profile Product
+	Service Catalog --> Portfolios --> Data Science Administrators --> products --> Create product
+--> Product name : Data Science Studio User Profile
+--->Description : Creates a SageMaker Studio User Profile 
+--> Owner : Data Science Administration Office -->  Use a CloudFormation template --> Specify a URL -->
+--> CloudFormation template URL : 
+	( s3 --> Buckets --> secure-data-science-cloudformation-{RANDOM_NUMBER}-{REGION} -->
+	--> objects --> quickstart --> ds_env_studio_user_profile_v1.yaml --> #  --> click on hyperlink for template ds_env_studio_user_profile_v1.yaml --> 
+ 	--> Click on copy icon under Object URL --> paste in CloudFormation template URL )
+--> Version name : v1 --> Review --> Create product --> (gets created) -->  
+--> Products --> radio button next to the new product -->  Actions --> Add product to portfolio --> 
+--> ## radio button for your product portfolio --> Add Product to Portfolio --> 
+--> Portfolios on the left --> Data Science Administrator Portfolio --> Constraints --> Create constraint --> 
+--> Product --> select your product --> Constraint type : Launch --> 
+--> Launch Constraint --> Select IAM role -->
+--> IAM role  --> {Shared Service Stack Name}-ServiceCatalogLaunchRole (default is DSSharedServices-ServiceCatalogLaunchRole) -->
+--> Create
+-------------------------------------------------------
+  ## Review shared resources
+
+	AWS Console --> (searching for the service in the search box) --> 
+	--> Shared Services VPC --> (see what services are accessible from within the VPC?)
+	--> CodeArtifact PIP repository --> (see What are these repository names? What is the purpose of public upstream repository?)
+	--> Amazon ECR repository --> (see What is the name of ECR repository?)
+	--> Custom Amazon SageMaker image in ECR repository --> (see What is the name & URI of the custom image?)
+	--> S3 Data Lake --> (see What is the name of this data lake bucket?)
+
+  ## Review team resources --> (IAM roles)
+
+	AWS IAM roles --> (IAM roles for the data science administration team and the Service Catalog have been created)
+	(AWS Lambda Detective Control) --> AWS Lambda --> (Can you determine exactly what types of events will cause the Lambda function to execute?)
+	(Parameters added to Parameter Store) --> (Can you see what parameters have been added? How would you use these values?)
+	
+--------------------------------------------------------
+######### Lab 2: Secure SageMaker Studio Domain #########
+	# An AWS account is limited to one domain per Region. Users within a domain can share notebook files and other artifacts with each other. 
+	# To delete a domain, the domain cannot contain any user profiles or spaces. To delete a user profile or space, the profile or space cannot contain any non-failed apps.
+	# Onboard SageMaker Studio Domain -->  This is a one time task for an AWS Region
+
+	 AWS CloudFormation -->  secure-ds-shared-service --> Outputs -->  AssumeDataScienceAdminRole -->
+--> (Click the hyperlink) --> Switch Role --> (Data Science Administrator Role acquired now)-->
+-->  Service Catalog --> Provisioning --> Products --> (radio button) SageMaker Studio Product --> Launch product -->
+ ## portfolios --> Data Science Administrator -->
+--> Provisioned product name --> (Give unique name ) --> (tick Generate name ) -->
+--> Product versions : v1 (already)--> 
+	( AWS CloudFormation --> secure-ds-shared-service --> parameters --> (keep tab open)
+	Provide values for following parameters:
+	AppImageConfigName 	: ds-tensorflow241-image-config
+	CustomImageDescription	: Custom TensorFlow v2.4.1 Image
+	CustomImageEcrUri	: Amazon ECR --> Repositories --> ds-shared-container-images --> 
+				 ---> (copy uri of image ds-custom-tensorflow241)	
+	CustomImageName		: ds-custom-tensorflow241
+	KMSAlias		: ds-sagemaker-studio-kms
+	KernelSpecsDisplayName	: Python3 TensorFlow 2.4.1
+	KernelSpecsName		: python3
+	SharedServiceStackSetName : DSSharedServices
+	StudioDomainName	: ds-studio-domain )
+	--> Launch Product --> ( 10-15 minutes for the stack to complete onboarding of SageMaker Studio Domain)
+----------------------------------------------------------------------------
+
+	SageMaker --> Amazon SageMaker Studio --> 
+---------------------------------------------------------------
+######### Lab 3: Secure Team Environment #########
+ ### You will create team specific KMS keys to encrypt data as it flows from storage in Amazon S3, 
+ ### into the VPC to EFS volumes for your SageMaker Studio Jupyter notebooks, and back out to Amazon S3.
+ ### You will also create team specific S3 buckets to host ML data and model artifacts and CodeCommit git repository 
+ ### to host source code for the team.
+
+	 (If NOT then To Acquire Data Science Administrator role) --> AWS CloudFormation --> select the stack you deployed in the previous lab
+--> Outputs -->  AssumeDataScienceAdminRole hyperlink --> (click) --> Switch Role
+
+	(As the Data Science Administrator) -->  AWS Service Catalog -->Provisioning --> Products -->  
+--> (radio button) Data Science Team Environment --> Launch product
+--> Provisioned product name --> (Give unique name ) --> (tick Generate name ) -->
+--> Product versions : v1 (already)--> 
+	( AWS CloudFormation --> secure-ds-shared-service --> parameters --> (keep tab open)
+	Provide values for following parameters:
+	SharedServiceStackSetName	: DSSharedServices
+	TeamName			: fsi-smteam
+	EnvType				: dev (this is default)
+	--> Launch product --> ( 10-15 minutes for the stack to complete creating all its resources)
+
+ ### Create SageMaker Studio Domain users for a data science environmentHeader anchor link ####
+
+	(As the Data Science Administrator) -->  AWS Service Catalog --> Provisioning --> Products -->
+--> (radio button) Data Science Studio User Profile --> Launch product
+--> Provisioned product name --> (Give unique name ) --> (tick Generate name ) -->
+--> ## You can append or prepend the user profile name to the generated name such as riskmodeler
+--> Product versions : v1 (already)--> 
+	( AWS CloudFormation --> secure-ds-shared-service --> parameters --> (keep tab open)
+	Provide values for following parameters:
+	SharedServiceStackSetName	: DSSharedServices
+	TeamName			: fsi-smteam
+	EnvType				: dev (this is default)
+	StudioUserProfileName		: riskmodeler
+	--> Launch product --> ( 1-2 minutes for the stack to create a new Studio user profile)
+------------------------------------------------------------------------------------------------------
+
+##### Lab 4: Launch SageMaker Studio IDE #####
+ ### After introducing the concepts and features of the service you will then launch SageMaker Studio IDE 
+ ### and a sample Studio Jupyter Notebook to begin data science work
+
+	(As Data Science Administrator) -->  AWS CloudFormation --> 
+ --> select the stack you deployed in the lab #2 Service Catalog Product Data Science Team Environment -->
+ --> Outputs --> AssumeTeamUserRole hyperlink --> Switch Role --> (You are Data Science User Now) -->
+
+ --> (As Data Science User) --> SageMaker -->  Amazon SageMaker Studio --> Open Studio link --> 
+ --> (SageMaker service will prepare your Studio environment by starting the Jupyter Server app 
+	on first access. It can take 5-10 minutes. Subsequent Studio launches take a few seconds 
+	since Studio environment is already prepared)
+ -->  Launcher --> Notebooks and compute resources -->  Select a SageMaker image --> 
+ --> ds-custom-tensorflow241 --> (Launch a notebook instance by clicking on + icon) --> 
+ --> (take 4-6 minutes for the kernel gateway app to start) -->
+ --> (launch image terminal (bash terminal) into the docker container for the notebook instance 
+	by clicking on $_ icon in notebook toolbar at the top) -->
+ --> cd ~/bin -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    Keep parameters tab from secure-ds-shared-service stack in AWS CloudFormation console 
+
+open as you will need parameter values that you provided earlier.
+SharedServiceStackSetName: DSSharedServices (or value from Cloud Formation Parameters tab).
+StudioDomainName: ds-studio-domain (this is default)
+AppImageConfigName: ds-tensorflow241-image-config.
+CustomImageDescription: Custom TensorFlow v2.4.1 Image.
+CustomImageEcrUri: obtain image URI for custom SageMaker docker image for TensorFlow from ECR console,
+
+    Open ECR console 
+
+    in a new browser tab, navigate to ECR Repository created by secure-ds-shared-service stack in Lab 1 (default is ds-shared-container-images).
+    Copy image URI for SageMaker docker image ds-custom-tensorflow241 by clicking on Copy URI icon.
+    Paste the image in this parameter value field.
+    The image URI will be of following format: <Account #>.dkr.ecr.us-east-2.amazonaws.com/sm-studio-workshop:ds-custom-tensorflow241
+
+CustomImageName: ds-custom-tensorflow241.
+KernelSpecsName: python3.
+KernelSpecsDisplayName: Python3 TensorFlow 2.4.1.
+
+
+
+
+HTTPS URL for template ds_env_sagemaker_studio.yaml from the S3 bucket to which CloudFormation templates for the workshop were uploaded earlier
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
